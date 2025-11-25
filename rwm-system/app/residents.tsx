@@ -9,7 +9,6 @@ import {
   FlatList,
   Alert,
   ActivityIndicator,
-  Platform,
   ScrollView,
 } from "react-native";
 import { Picker } from "@react-native-picker/picker";
@@ -25,13 +24,21 @@ import CertificatePreview from "../components/CertificatePreview";
 import { certificateTemplate } from "../lib/certificateTemplate";
 import { summonTemplate } from "../lib/summonTemplate";
 import ProfileModal from "../components/ProfileModal";
-/* ----------------------------- Types & Helpers ---------------------------- */
+
+/* ============================================================================
+   CONSTANTS & HELPERS
+   ========================================================================== */
+
+const GENDER_OPTIONS = ["Male", "Female", "Other"];
+const CIVIL_STATUS_OPTIONS = ["Single", "Married", "Widowed", "Separated"];
+const BENEFICIARY_STATUS_OPTIONS = ["None", "4Ps", "Senior Citizen", "PWD", "Solo Parent"];
+const SEARCH_TYPES = ["name", "purok", "age", "street"];
 
 const emptyForm = {
   firstName: "",
   middleName: "",
   lastName: "",
-  birthDate: "", // ISO string from input; backend will compute age
+  birthDate: "",
   gender: "Male",
   street: "",
   purok: "",
@@ -41,13 +48,17 @@ const emptyForm = {
   occupation: "",
   monthlyIncome: "",
   beneficiaryStatus: "None",
-  purpose: "", // used for certificate
+  purpose: "",
 };
 
 const formatDatePH = (dateLike?: string | Date) => {
   try {
     const d = dateLike ? new Date(dateLike) : new Date();
-    return d.toLocaleDateString("en-PH", { year: "numeric", month: "long", day: "numeric" });
+    return d.toLocaleDateString("en-PH", { 
+      year: "numeric", 
+      month: "long", 
+      day: "numeric" 
+    });
   } catch {
     return "";
   }
@@ -55,64 +66,6 @@ const formatDatePH = (dateLike?: string | Date) => {
 
 const fullName = (r) =>
   [r?.firstName, r?.middleName, r?.lastName].filter(Boolean).join(" ");
-const GENDER_OPTIONS = ["Male", "Female", "Other"];
-const CIVIL_STATUS_OPTIONS = ["Single", "Married", "Widowed", "Separated"];
-const BENEFICIARY_STATUS_OPTIONS = ["None", "4Ps", "Senior Citizen", "PWD", "Solo Parent"];
-
-/* ------------------------------- Main Screen ------------------------------ */
-
-export default function ResidentsScreen() {
-  const [loading, setLoading] = useState(false);
-  const [residents, setResidents] = useState<any[]>([]);
-  const [query, setQuery] = useState("");
-  const [showAdd, setShowAdd] = useState(false);
-  const [showEdit, setShowEdit] = useState(false);
-  const [showView, setShowView] = useState(false);
-  const [showPurpose, setShowPurpose] = useState(false);
-const [previewHTML, setPreviewHTML] = useState("");
-const [showPreview, setShowPreview] = useState(false);
-const [previewResident, setPreviewResident] = useState<any | null>(null);
-const [previewType, setPreviewType] = useState<"indigency" | "summon" | null>(null);
-const [searchType, setSearchType] = useState("name"); // 'name', 'purok', 'age', 'street'
-const [searchTimeout, setSearchTimeout] = useState<NodeJS.Timeout | null>(null);
-  const [form, setForm] = useState({ ...emptyForm });
-  const [editId, setEditId] = useState<string | null>(null);
-  const [viewItem, setViewItem] = useState<any | null>(null);
-  const [purposeText, setPurposeText] = useState("");
-
-  /* ------------------------------- Data Calls ------------------------------ */
-
-const fetchResidents = async () => {
-  console.log("🔄 fetchResidents called");
-  try {
-    setLoading(true);
-    const res = await api.get("/residents");
-    console.log("✅ /residents response:", res.data);
-    setResidents(res.data || []);
-  } catch (err: any) {
-    console.error("❌ /residents error:", err?.response?.data || err?.message);
-    Alert.alert("Error", "Failed to load residents.");
-  } finally {
-    console.log("✅ fetchResidents finished");
-    setLoading(false); // ⬅️ this should hide the spinner
-  }
-};
-
-const openCertificatePreview = (item, purpose) => {
-  const html = certificateTemplate(item, purpose, fullName, formatDatePH);
-  setPreviewResident(item);
-  setPreviewType("indigency");
-  setPreviewHTML(html);
-  setShowPreview(true);
-};
-
-const openSummonPreview = (item) => {
-  const html = summonTemplate(item, fullName, formatDatePH);
-  setPreviewResident(item);
-  setPreviewType("summon");
-  setPreviewHTML(html);
-  setShowPreview(true);
-};
 
 const classifyIncome = (monthlyIncome: number | string) => {
   const income = typeof monthlyIncome === 'string' ? Number(monthlyIncome) : monthlyIncome;
@@ -127,73 +80,106 @@ const classifyIncome = (monthlyIncome: number | string) => {
   return 'High Income';
 };
 
-  const searchResidents = async (text: string) => {
-  setQuery(text);
+/* ============================================================================
+   MAIN COMPONENT
+   ========================================================================== */
+
+export default function ResidentsScreen() {
+  // State - Data
+  const [residents, setResidents] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
   
-  // Clear existing timeout
-  if (searchTimeout) {
-    clearTimeout(searchTimeout);
-  }
+  // State - Search
+  const [query, setQuery] = useState("");
+  const [searchType, setSearchType] = useState("name");
+  const [searchTimeout, setSearchTimeout] = useState<NodeJS.Timeout | null>(null);
   
-  // If empty or too short, fetch all residents
-  if (!text || text.trim().length === 0) {
-    fetchResidents();
-    return;
-  }
+  // State - Modals
+  const [showAdd, setShowAdd] = useState(false);
+  const [showEdit, setShowEdit] = useState(false);
+  const [showView, setShowView] = useState(false);
+  const [showPurpose, setShowPurpose] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
   
-  // Set new timeout - only search after user stops typing for 500ms
-  const timeout = setTimeout(async () => {
+  // State - Form & Preview
+  const [form, setForm] = useState({ ...emptyForm });
+  const [editId, setEditId] = useState<string | null>(null);
+  const [viewItem, setViewItem] = useState<any | null>(null);
+  const [purposeText, setPurposeText] = useState("");
+  const [previewHTML, setPreviewHTML] = useState("");
+  const [previewResident, setPreviewResident] = useState<any | null>(null);
+  const [previewType, setPreviewType] = useState<"indigency" | "summon" | null>(null);
+
+  /* ==========================================================================
+     API CALLS
+     ======================================================================== */
+
+  const fetchResidents = async () => {
     try {
       setLoading(true);
-      let endpoint = '';
-      
-      switch (searchType) {
-        case 'name':
-          endpoint = `/residents/search/${encodeURIComponent(text)}`;
-          break;
-        case 'purok':
-          endpoint = `/residents/search/purok/${encodeURIComponent(text)}`;
-          break;
-        case 'age':
-          endpoint = `/residents/search/age/${encodeURIComponent(text)}`;
-          break;
-        case 'street':
-          endpoint = `/residents/search/street/${encodeURIComponent(text)}`;
-          break;
-        default:
-          endpoint = `/residents/search/${encodeURIComponent(text)}`;
-      }
-      
-      const res = await api.get(endpoint);
+      const res = await api.get("/residents");
       setResidents(res.data || []);
     } catch (err: any) {
-      console.error(err?.response?.data || err?.message);
-      // If search fails, show all residents
-      fetchResidents();
+      console.error("❌ /residents error:", err?.response?.data || err?.message);
+      Alert.alert("Error", "Failed to load residents.");
     } finally {
       setLoading(false);
     }
-  }, 500); // Wait 500ms after user stops typing
-  
-  setSearchTimeout(timeout);
-};
+  };
 
-// Add cleanup in useEffect
-useEffect(() => {
-  fetchResidents();
-  
-  // Cleanup timeout on unmount
-  return () => {
+  const searchResidents = async (text: string) => {
+    setQuery(text);
+    
     if (searchTimeout) {
       clearTimeout(searchTimeout);
     }
+    
+    if (!text || text.trim().length === 0) {
+      fetchResidents();
+      return;
+    }
+    
+    const timeout = setTimeout(async () => {
+      try {
+        setLoading(true);
+        const endpoints = {
+          name: `/residents/search/${encodeURIComponent(text)}`,
+          purok: `/residents/search/purok/${encodeURIComponent(text)}`,
+          age: `/residents/search/age/${encodeURIComponent(text)}`,
+          street: `/residents/search/street/${encodeURIComponent(text)}`,
+        };
+        
+        const endpoint = endpoints[searchType] || endpoints.name;
+        console.log("🔍 Searching:", endpoint);
+        
+        const res = await api.get(endpoint);
+        console.log("✅ Search results:", res.data?.length || 0, "residents found");
+        setResidents(res.data || []);
+      } catch (err: any) {
+        console.error("❌ Search error:", err?.response?.data || err?.message);
+        // Don't fallback to all residents on search error - keep empty or show error
+        if (err?.response?.status === 404) {
+          setResidents([]);
+        } else {
+          Alert.alert("Search Error", "Failed to search residents. Please try again.");
+          fetchResidents();
+        }
+      } finally {
+        setLoading(false);
+      }
+    }, 500);
+    
+    setSearchTimeout(timeout);
   };
-}, []);
 
+  const [recordStatus, setRecordStatus] = useState<{show: boolean, message: string, type: 'success' | 'error'}>({
+  show: false,
+  message: '',
+  type: 'success'
+});
 
   const addResident = async () => {
     try {
-      // barangay auto-fill from saved login (if you saved it)
       const barangayName = await AsyncStorage.getItem("barangayName");
       const payload = {
         ...form,
@@ -209,27 +195,6 @@ useEffect(() => {
       console.error(err?.response?.data || err?.message);
       Alert.alert("Error", err?.response?.data?.message || "Failed to add resident.");
     }
-  };
-
-  const startEdit = (item) => {
-    setEditId(item._id);
-    setForm({
-      firstName: item.firstName || "",
-      middleName: item.middleName || "",
-      lastName: item.lastName || "",
-      birthDate: item.birthDate ? item.birthDate.substring(0, 10) : "",
-      gender: item.gender || "Male",
-      street: item.street || "",
-      purok: item.purok || "",
-      barangay: item.barangay || "",
-      civilStatus: item.civilStatus || "Single",
-      contactNumber: item.contactNumber || "",
-      occupation: item.occupation || "",
-      monthlyIncome: item.monthlyIncome ? String(item.monthlyIncome) : "",
-      beneficiaryStatus: item.beneficiaryStatus || "None",
-      purpose: "",
-    });
-    setShowEdit(true);
   };
 
   const saveEdit = async () => {
@@ -298,15 +263,35 @@ useEffect(() => {
     }
   };
 
-  /* --------------------------------- UI ----------------------------------- */
-  useEffect(() => {
-    fetchResidents();
-  }, []);
+  /* ==========================================================================
+     MODAL HANDLERS
+     ======================================================================== */
 
   const openAdd = async () => {
     const barangayName = await AsyncStorage.getItem("barangayName");
     setForm({ ...emptyForm, barangay: barangayName || "" });
     setShowAdd(true);
+  };
+
+  const startEdit = (item) => {
+    setEditId(item._id);
+    setForm({
+      firstName: item.firstName || "",
+      middleName: item.middleName || "",
+      lastName: item.lastName || "",
+      birthDate: item.birthDate ? item.birthDate.substring(0, 10) : "",
+      gender: item.gender || "Male",
+      street: item.street || "",
+      purok: item.purok || "",
+      barangay: item.barangay || "",
+      civilStatus: item.civilStatus || "Single",
+      contactNumber: item.contactNumber || "",
+      occupation: item.occupation || "",
+      monthlyIncome: item.monthlyIncome ? String(item.monthlyIncome) : "",
+      beneficiaryStatus: item.beneficiaryStatus || "None",
+      purpose: "",
+    });
+    setShowEdit(true);
   };
 
   const openView = (item) => {
@@ -320,411 +305,209 @@ useEffect(() => {
     setShowPurpose(true);
   };
 
-const renderRow = ({ item }) => (
-  <View
-    style={[
-      GLOBAL_STYLES.card,
-      {
-        flexDirection: "row",
-        alignItems: "center",
-        justifyContent: "space-between",
-        gap: 8,
-      },
-    ]}
-  >
-    <View style={{ flex: 1 }}>
-      <Text style={{ fontWeight: "600", fontSize: 16 }}>
-        {fullName(item)}
-      </Text>
-      <Text style={{ opacity: 0.7 }}>
-        {item.gender} • {item.civilStatus || "—"} • Purok {item.purok || "—"}
-      </Text>
-      {/* Add income classification display */}
-      <Text style={{ opacity: 0.7, fontSize: 12, marginTop: 4 }}>
-        Income: {item.monthlyIncome ? `₱${item.monthlyIncome}` : "—"} 
-        {item.monthlyIncome && ` (${classifyIncome(item.monthlyIncome)})`}
-      </Text>
-    </View>
+  const openCertificatePreview = (item, purpose) => {
+    const html = certificateTemplate(item, purpose, fullName, formatDatePH);
+    setPreviewResident(item);
+    setPreviewType("indigency");
+    setPreviewHTML(html);
+    setShowPreview(true);
+  };
 
-      <View style={{ flexDirection: "row", gap: 8 }}>
-        <TouchableOpacity
-          style={[GLOBAL_STYLES.button, { paddingHorizontal: 10, paddingVertical: 8 }]}
-          onPress={() => openView(item)}
-        >
-          <Text style={GLOBAL_STYLES.buttonText}>View</Text>
-        </TouchableOpacity>
+  const openSummonPreview = (item) => {
+    const html = summonTemplate(item, fullName, formatDatePH);
+    setPreviewResident(item);
+    setPreviewType("summon");
+    setPreviewHTML(html);
+    setShowPreview(true);
+  };
 
-        <TouchableOpacity
-          style={[GLOBAL_STYLES.button, { backgroundColor: COLORS.secondary, paddingHorizontal: 10, paddingVertical: 8 }]}
-          onPress={() => startEdit(item)}
-        >
-          <Text style={GLOBAL_STYLES.buttonText}>Edit</Text>
-        </TouchableOpacity>
+  /* ==========================================================================
+     LIFECYCLE
+     ======================================================================== */
 
-        <TouchableOpacity
-          style={[GLOBAL_STYLES.button, { backgroundColor: COLORS.danger, paddingHorizontal: 10, paddingVertical: 8 }]}
-          onPress={() => deleteResident(item._id)}
-        >
-          <Text style={GLOBAL_STYLES.buttonText}>Delete</Text>
-        </TouchableOpacity>
-      </View>
+  useEffect(() => {
+    fetchResidents();
+    
+    return () => {
+      if (searchTimeout) {
+        clearTimeout(searchTimeout);
+      }
+    };
+  }, []);
 
-      {/* Secondary row of actions */}
-      <View style={{ position: "absolute", bottom: -10, right: 14, flexDirection: "row", gap: 8 }}>
-        <TouchableOpacity
-          style={[GLOBAL_STYLES.button, { backgroundColor: COLORS.primaryLight, paddingHorizontal: 10, paddingVertical: 6 }]}
-          onPress={() => openPurposeThenGenerate(item)}
-        >
-          <Text style={GLOBAL_STYLES.buttonText}>Certificate</Text>
-        </TouchableOpacity>
-       <TouchableOpacity
-  style={[GLOBAL_STYLES.button, { backgroundColor: "#8b5cf6", paddingHorizontal: 10, paddingVertical: 6 }]}
-onPress={() => openSummonPreview(item)}
->
-  <Text style={GLOBAL_STYLES.buttonText}>Summon</Text>
-</TouchableOpacity>
+  /* ==========================================================================
+     RENDER HELPERS
+     ======================================================================== */
+
+  const renderResidentCard = ({ item }) => (
+    <View style={styles.residentCard}>
+      <View style={styles.cardContent}>
+        {/* Left: Resident Info */}
+        <View style={styles.residentInfo}>
+          <Text style={styles.residentName}>{fullName(item)}</Text>
+          <View style={styles.residentDetails}>
+            <View style={styles.detailBadge}>
+              <Text style={styles.detailText}>{item.gender}</Text>
+            </View>
+            <View style={styles.detailBadge}>
+              <Text style={styles.detailText}>{item.civilStatus || "—"}</Text>
+            </View>
+            <View style={styles.detailBadge}>
+              <Text style={styles.detailText}>Purok {item.purok || "—"}</Text>
+            </View>
+            {item.age && (
+              <View style={styles.detailBadge}>
+                <Text style={styles.detailText}>Age {item.age}</Text>
+              </View>
+            )}
+          </View>
+          {item.monthlyIncome && (
+            <Text style={styles.incomeInfo}>
+              ₱{item.monthlyIncome.toLocaleString()} • {classifyIncome(item.monthlyIncome)}
+            </Text>
+          )}
+        </View>
+
+        {/* Right: Action Buttons */}
+        <View style={styles.cardButtons}>
+          <View style={styles.buttonRow}>
+            <ActionButton text="View" onPress={() => openView(item)} color="#6366f1" small />
+            <ActionButton text="Edit" onPress={() => startEdit(item)} color={COLORS.secondary} small />
+            <ActionButton text="Delete" onPress={() => deleteResident(item._id)} color={COLORS.danger} small />
+          </View>
+          <View style={styles.buttonRow}>
+            <ActionButton text="Certificate" onPress={() => openPurposeThenGenerate(item)} color="#3b82f6" small />
+            <ActionButton text="Summon" onPress={() => openSummonPreview(item)} color="#8b5cf6" small />
+          </View>
+        </View>
       </View>
     </View>
   );
 
   const header = useMemo(
-  () => (
-    <View style={{ marginBottom: 10 }}>
-      {/* Search Type Selector */}
-      <View style={{ marginBottom: 10 }}>
-        <Text style={GLOBAL_STYLES.label}>Search By:</Text>
-        <View style={[GLOBAL_STYLES.input, { padding: 0, justifyContent: "center" }]}>
-          <Picker
-            selectedValue={searchType}
-            onValueChange={(value) => {
-              setSearchType(value);
-              setQuery(""); // Clear search when changing type
-              fetchResidents(); // Reset to all residents
-            }}
-          >
-            <Picker.Item label="Name" value="name" />
-            <Picker.Item label="Purok" value="purok" />
-            <Picker.Item label="Age" value="age" />
-            <Picker.Item label="Street" value="street" />
-          </Picker>
-        </View>
-      </View>
+    () => (
+      <View style={styles.headerContainer}>
+        {/* Search Row - All in one line */}
+        <View style={styles.searchMainRow}>
+          <View style={styles.searchTypeWrapper}>
+            <Text style={styles.searchLabel}>Search By:</Text>
+            <View style={styles.searchTypeDropdown}>
+              <Picker
+                selectedValue={searchType}
+                onValueChange={(value) => {
+                  setSearchType(value);
+                  setQuery("");
+                  fetchResidents();
+                }}
+                style={styles.compactPicker}
+              >
+                <Picker.Item label="Name" value="name" style={styles.pickerItem} />
+                <Picker.Item label="Purok" value="purok" style={styles.pickerItem} />
+                <Picker.Item label="Age" value="age" style={styles.pickerItem} />
+                <Picker.Item label="Street" value="street" style={styles.pickerItem} />
+              </Picker>
+            </View>
+          </View>
 
-      {/* Search + Import */}
-      <View style={{ flexDirection: "row", gap: 10, marginBottom: 10 }}>
-        <TextInput
-          style={[GLOBAL_STYLES.input, { flex: 1 }]}
-          placeholder={
-            searchType === "name" ? "Search by name..." :
-            searchType === "purok" ? "Search by purok..." :
-            searchType === "age" ? "Search by age..." :
-            "Search by street..."
-          }
-          value={query}
-          onChangeText={searchResidents}
-          keyboardType={searchType === "age" ? "numeric" : "default"}
-        />
-        <TouchableOpacity
-          style={[GLOBAL_STYLES.button, { backgroundColor: COLORS.secondary }]}
-          onPress={importCSV}
+          <TextInput
+            style={[GLOBAL_STYLES.input, styles.searchInput]}
+            placeholder={getSearchPlaceholder(searchType)}
+            value={query}
+            onChangeText={searchResidents}
+            keyboardType={searchType === "age" ? "numeric" : "default"}
+          />
+
+          <TouchableOpacity
+            style={[GLOBAL_STYLES.button, styles.importButton]}
+            onPress={importCSV}
+          >
+            <Text style={GLOBAL_STYLES.buttonText}>Import CSV</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Add Resident Button */}
+        <TouchableOpacity 
+          style={[GLOBAL_STYLES.button, styles.addButton]} 
+          onPress={openAdd}
         >
-          <Text style={GLOBAL_STYLES.buttonText}>Import CSV</Text>
+          <Text style={GLOBAL_STYLES.buttonText}>+ Add Resident</Text>
         </TouchableOpacity>
       </View>
+    ),
+    [query, searchType]
+  );
 
-      <TouchableOpacity style={GLOBAL_STYLES.button} onPress={openAdd}>
-        <Text style={GLOBAL_STYLES.buttonText}>Add Resident</Text>
-      </TouchableOpacity>
-    </View>
-  ),
-  [query, searchType]
-);
+  /* ==========================================================================
+     MAIN RENDER
+     ======================================================================== */
 
   return (
     <SidebarLayout>
       <View style={GLOBAL_STYLES.contentArea}>
-        <Text style={GLOBAL_STYLES.title}>Residents</Text>
+        <View style={styles.pageHeader}>
+          <Text style={styles.pageTitle}>Residents Management</Text>
+          <Text style={styles.pageSubtitle}>
+            {residents.length} {residents.length === 1 ? 'Resident' : 'Residents'} Registered
+          </Text>
+        </View>
+        
         {loading ? (
-          <ActivityIndicator />
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={COLORS.primary} />
+            <Text style={styles.loadingText}>Loading residents...</Text>
+          </View>
         ) : (
           <FlatList
             data={residents}
             keyExtractor={(item) => item._id}
-            renderItem={renderRow}
+            renderItem={renderResidentCard}
             ListHeaderComponent={header}
+            ListEmptyComponent={
+              <View style={styles.emptyContainer}>
+                <Text style={styles.emptyText}>No residents found</Text>
+                <Text style={styles.emptySubtext}>Add a resident to get started</Text>
+              </View>
+            }
             contentContainerStyle={{ paddingBottom: 40 }}
           />
         )}
       </View>
 
-      {/* ------------------------------- ADD MODAL ------------------------------- */}
-      <Modal visible={showAdd} animationType="fade" transparent onRequestClose={() => setShowAdd(false)}>
-        <ScrollView contentContainerStyle={[GLOBAL_STYLES.centered, { backgroundColor: "#00000088", padding: 16 }]}>
-          <View style={[GLOBAL_STYLES.card, { width: "96%" }]}>
-            <Text style={GLOBAL_STYLES.subtitle}>Add Resident</Text>
+      {/* Modals */}
+      <ResidentFormModal
+        visible={showAdd}
+        title="Add Resident"
+        form={form}
+        setForm={setForm}
+        onSave={addResident}
+        onCancel={() => setShowAdd(false)}
+      />
 
-            <TwoCol>
-              <Input label="First Name" value={form.firstName} onChangeText={(t) => setForm({ ...form, firstName: t })} />
-              <Input label="Middle Name" value={form.middleName} onChangeText={(t) => setForm({ ...form, middleName: t })} />
-              <Input label="Last Name" value={form.lastName} onChangeText={(t) => setForm({ ...form, lastName: t })} />
-             {/* Birth Date with calendar */}
-<View style={{ marginBottom: 10 }}>
-  <Text style={GLOBAL_STYLES.label}>Birth Date</Text>
-  <input
-    type="date"
-    value={form.birthDate}
-    onChange={(e) => setForm({ ...form, birthDate: e.target.value })}
-    style={{
-  width: "100%",
-  padding: 8,
-  borderRadius: 8,
-  backgroundColor: "white",
-  fontSize: 16,
-  border: "1px solid #d1d5db",
-}}
+      <ResidentFormModal
+        visible={showEdit}
+        title="Edit Resident"
+        form={form}
+        setForm={setForm}
+        onSave={saveEdit}
+        onCancel={() => setShowEdit(false)}
+      />
 
-  />
-</View>
+      <PurposeModal
+        visible={showPurpose}
+        purposeText={purposeText}
+        setPurposeText={setPurposeText}
+        onGenerate={() => {
+          setShowPurpose(false);
+          if (viewItem) openCertificatePreview(viewItem, purposeText);
+        }}
+        onCancel={() => setShowPurpose(false)}
+      />
 
-{/* Gender dropdown */}
-<View style={{ marginBottom: 10 }}>
-  <Text style={GLOBAL_STYLES.label}>Gender</Text>
-  <View style={[GLOBAL_STYLES.input, { padding: 0, justifyContent: "center" }]}>
-    <Picker
-      selectedValue={form.gender}
-      onValueChange={(value) => setForm({ ...form, gender: value })}
-    >
-      {GENDER_OPTIONS.map((g) => (
-        <Picker.Item key={g} label={g} value={g} />
-      ))}
-    </Picker>
-  </View>
-</View>
-
-{/* Civil Status dropdown */}
-<View style={{ marginBottom: 10 }}>
-  <Text style={GLOBAL_STYLES.label}>Civil Status</Text>
-  <View style={[GLOBAL_STYLES.input, { padding: 0, justifyContent: "center" }]}>
-    <Picker
-      selectedValue={form.civilStatus}
-      onValueChange={(value) => setForm({ ...form, civilStatus: value })}
-    >
-      {CIVIL_STATUS_OPTIONS.map((cs) => (
-        <Picker.Item key={cs} label={cs} value={cs} />
-      ))}
-    </Picker>
-  </View>
-</View>
-              <Input label="Street" value={form.street} onChangeText={(t) => setForm({ ...form, street: t })} />
-              <Input label="Purok" value={form.purok} onChangeText={(t) => setForm({ ...form, purok: t })} />
-              <Input label="Barangay" value={form.barangay} onChangeText={(t) => setForm({ ...form, barangay: t })} />
-              <Input label="Contact Number" value={form.contactNumber} onChangeText={(t) => setForm({ ...form, contactNumber: t })} keyboardType="phone-pad" />
-              <Input label="Occupation" value={form.occupation} onChangeText={(t) => setForm({ ...form, occupation: t })} />
-              <Input label="Monthly Income" value={form.monthlyIncome} onChangeText={(t) => setForm({ ...form, monthlyIncome: t })} keyboardType="numeric" />
-              {/* Beneficiary Status dropdown */}
-<View style={{ marginBottom: 10 }}>
-  <Text style={GLOBAL_STYLES.label}>Beneficiary Status</Text>
-  <View style={[GLOBAL_STYLES.input, { padding: 0, justifyContent: "center" }]}>
-    <Picker
-      selectedValue={form.beneficiaryStatus}
-      onValueChange={(value) => setForm({ ...form, beneficiaryStatus: value })}
-    >
-      {BENEFICIARY_STATUS_OPTIONS.map((opt) => (
-        <Picker.Item key={opt} label={opt} value={opt} />
-      ))}
-    </Picker>
-  </View>
-</View>
-            </TwoCol>
-
-            <Row gap={10} style={{ marginTop: 10 }}>
-              <Button text="Save" onPress={addResident} />
-              <Button text="Cancel" onPress={() => setShowAdd(false)} variant="danger" />
-            </Row>
-          </View>
-        </ScrollView>
-      </Modal>
-
-      {/* ------------------------------- EDIT MODAL ------------------------------ */}
-      <Modal visible={showEdit} animationType="fade" transparent onRequestClose={() => setShowEdit(false)}>
-        <ScrollView contentContainerStyle={[GLOBAL_STYLES.centered, { backgroundColor: "#00000088", padding: 16 }]}>
-          <View style={[GLOBAL_STYLES.card, { width: "96%" }]}>
-            <Text style={GLOBAL_STYLES.subtitle}>Edit Resident</Text>
-
-            <TwoCol>
-              <Input label="First Name" value={form.firstName} onChangeText={(t) => setForm({ ...form, firstName: t })} />
-              <Input label="Middle Name" value={form.middleName} onChangeText={(t) => setForm({ ...form, middleName: t })} />
-              <Input label="Last Name" value={form.lastName} onChangeText={(t) => setForm({ ...form, lastName: t })} />
-          <View style={{ marginBottom: 10 }}>
-  <Text style={GLOBAL_STYLES.label}>Birth Date</Text>
-  <input
-    type="date"
-    value={form.birthDate}
-    onChange={(e) => setForm({ ...form, birthDate: e.target.value })}
-   style={{
-  width: "100%",
-  padding: 8,
-  borderRadius: 8,
-  backgroundColor: "white",
-  fontSize: 16,
-  border: "1px solid #d1d5db",
-}}
-
-  />
-</View>
-
-{/* Gender dropdown */}
-<View style={{ marginBottom: 10 }}>
-  <Text style={GLOBAL_STYLES.label}>Gender</Text>
-  <View style={[GLOBAL_STYLES.input, { padding: 0, justifyContent: "center" }]}>
-    <Picker
-      selectedValue={form.gender}
-      onValueChange={(value) => setForm({ ...form, gender: value })}
-    >
-      {GENDER_OPTIONS.map((g) => (
-        <Picker.Item key={g} label={g} value={g} />
-      ))}
-    </Picker>
-  </View>
-</View>
-
-{/* Civil Status dropdown */}
-<View style={{ marginBottom: 10 }}>
-  <Text style={GLOBAL_STYLES.label}>Civil Status</Text>
-  <View style={[GLOBAL_STYLES.input, { padding: 0, justifyContent: "center" }]}>
-    <Picker
-      selectedValue={form.civilStatus}
-      onValueChange={(value) => setForm({ ...form, civilStatus: value })}
-    >
-      {CIVIL_STATUS_OPTIONS.map((cs) => (
-        <Picker.Item key={cs} label={cs} value={cs} />
-      ))}
-    </Picker>
-  </View>
-</View>
-
-              <Input label="Street" value={form.street} onChangeText={(t) => setForm({ ...form, street: t })} />
-              <Input label="Purok" value={form.purok} onChangeText={(t) => setForm({ ...form, purok: t })} />
-              <Input label="Barangay" value={form.barangay} onChangeText={(t) => setForm({ ...form, barangay: t })} />
-              <Input label="Contact Number" value={form.contactNumber} onChangeText={(t) => setForm({ ...form, contactNumber: t })} keyboardType="phone-pad" />
-              <Input label="Occupation" value={form.occupation} onChangeText={(t) => setForm({ ...form, occupation: t })} />
-              <Input label="Monthly Income" value={form.monthlyIncome} onChangeText={(t) => setForm({ ...form, monthlyIncome: t })} keyboardType="numeric" />
-{/* Beneficiary Status dropdown */}
-<View style={{ marginBottom: 10 }}>
-  <Text style={GLOBAL_STYLES.label}>Beneficiary Status</Text>
-  <View style={[GLOBAL_STYLES.input, { padding: 0, justifyContent: "center" }]}>
-    <Picker
-      selectedValue={form.beneficiaryStatus}
-      onValueChange={(value) => setForm({ ...form, beneficiaryStatus: value })}
-    >
-      {BENEFICIARY_STATUS_OPTIONS.map((opt) => (
-        <Picker.Item key={opt} label={opt} value={opt} />
-      ))}
-    </Picker>
-  </View>
-</View>            </TwoCol>
-
-            <Row gap={10} style={{ marginTop: 10 }}>
-              <Button text="Save Changes" onPress={saveEdit} />
-              <Button text="Cancel" onPress={() => setShowEdit(false)} variant="danger" />
-            </Row>
-          </View>
-        </ScrollView>
-      </Modal>
-
-      
-
-      {/* ----------------------------- PURPOSE MODAL --------------------------- */}
-      <Modal visible={showPurpose} animationType="fade" transparent onRequestClose={() => setShowPurpose(false)}>
-        <View style={[GLOBAL_STYLES.centered, { backgroundColor: "#00000088", padding: 16 }]}>
-          <View style={[GLOBAL_STYLES.card, { width: "92%" }]}>
-            <Text style={GLOBAL_STYLES.subtitle}>Certificate Purpose</Text>
-            <TextInput
-              style={GLOBAL_STYLES.input}
-              placeholder="e.g. Scholarship Application"
-              value={purposeText}
-              onChangeText={setPurposeText}
-            />
-            <Row gap={10}>
-              <Button
-  text="Generate"
-  onPress={() => {
-    const item = viewItem;
-    setShowPurpose(false);
-    if (item) openCertificatePreview(item, purposeText);
-  }}
-/>
-
-              <Button text="Cancel" onPress={() => setShowPurpose(false)} variant="danger" />
-            </Row>
-          </View>
-        </View>
-      </Modal>
-            <ProfileModal
+      <ProfileModal
         visible={showView}
         title="Resident Profile"
         onClose={() => setShowView(false)}
-        sections={
-          !viewItem
-            ? []
-            : [
-                {
-                  heading: "Personal Information",
-                  fields: [
-                    { label: "Full Name", value: fullName(viewItem) },
-                    { label: "Gender", value: viewItem.gender },
-                    { label: "Age", value: viewItem.age ?? "—" },
-                    {
-                      label: "Birth Date",
-                      value: viewItem.birthDate
-                        ? formatDatePH(viewItem.birthDate)
-                        : "—",
-                    },
-                    { label: "Civil Status", value: viewItem.civilStatus || "—" },
-                  ],
-                },
-                {
-                  heading: "Address",
-                  fields: [
-                    {
-                      label: "Street",
-                      value: viewItem.street || "—",
-                    },
-                    {
-                      label: "Purok",
-                      value: viewItem.purok || "—",
-                    },
-                    {
-                      label: "Barangay",
-                      value: viewItem.barangay || "—",
-                    },
-                  ],
-                },
-                {
-                  heading: "Contact & Socio-Economic",
-                  fields: [
-                    {
-                      label: "Contact Number",
-                      value: viewItem.contactNumber || "—",
-                    },
-                    {
-                      label: "Occupation",
-                      value: viewItem.occupation || "—",
-                    },
-                    {
-                      label: "Monthly Income",
-                      value: viewItem.monthlyIncome
-                         ? `₱${viewItem.monthlyIncome} (${classifyIncome(viewItem.monthlyIncome)})`
-                          : "—",
-                    },
-                    {
-                      label: "Beneficiary Status",
-                      value: viewItem.beneficiaryStatus || "None",
-                    },
-                  ],
-                },
-              ]
-        }
+        sections={buildProfileSections(viewItem)}
         actions={[
           {
             text: "Summon",
@@ -739,85 +522,773 @@ onPress={() => openSummonPreview(item)}
         ]}
       />
 
-<CertificatePreview
-  visible={showPreview}
-  html={previewHTML}
-  onClose={() => setShowPreview(false)}
-  onPrint={async () => {
-    if (!previewHTML || !previewResident || !previewType) return;
+      <CertificatePreview
+        visible={showPreview}
+        html={previewHTML}
+        onClose={() => setShowPreview(false)}
+        onPrint={async () => {
+          if (!previewHTML || !previewResident || !previewType) return;
 
-    // 1) Generate PDF
-    const { uri } = await Print.printToFileAsync({ html: previewHTML });
-    if (await Sharing.isAvailableAsync()) {
-      await Sharing.shareAsync(uri);
-    }
+          const { uri } = await Print.printToFileAsync({ html: previewHTML });
+          if (await Sharing.isAvailableAsync()) {
+            await Sharing.shareAsync(uri);
+          }
 
-    // 2) Log to backend
-    try {
-      await api.post("/certificates", {
-        residentId: previewResident._id,
-        documentType:
-          previewType === "indigency"
-            ? "Certificate of Indigency"
-            : "Letter of Summon",
-        purpose: previewType === "indigency" ? purposeText || "Official request" : "",
+          try {
+            await api.post("/certificates", {
+              residentId: previewResident._id,
+              documentType:
+                previewType === "indigency"
+                  ? "Certificate of Indigency"
+                  : "Letter of Summon",
+              purpose: previewType === "indigency" ? purposeText || "Official request" : "",
+            });
+          } catch (e: any) {
+            console.warn("Failed to log certificate:", e?.response?.data || e?.message);
+          }
+
+          setShowPreview(false);
+        }}
+      />
+
+
+      <CertificatePreview
+        visible={showPreview}
+        html={previewHTML}
+        onClose={() => setShowPreview(false)}
+        onPrint={async () => {
+          if (!previewHTML || !previewResident || !previewType) return;
+
+          const { uri } = await Print.printToFileAsync({ html: previewHTML });
+          if (await Sharing.isAvailableAsync()) {
+            await Sharing.shareAsync(uri);
+          }
+
+          setShowPreview(false);
+        }}
+    onRecord={async () => {
+  if (!previewResident || !previewType) {
+    setRecordStatus({
+      show: true,
+      message: "Missing resident or document type",
+      type: 'error'
+    });
+    return;
+  }
+
+  try {
+    if (previewType === "indigency") {
+      const payload = {
+        residentName: fullName(previewResident),
+        certificateType: "Certificate of Indigency",
+        purpose: purposeText || "Official request",
+      };
+      
+      console.log("📤 Sending certificate:", payload);
+      const response = await api.post("/certificates", payload);
+      console.log("✅ Certificate response:", response.data);
+      
+      setRecordStatus({
+        show: true,
+        message: "Certificate recorded successfully!",
+        type: 'success'
       });
-    } catch (e: any) {
-      console.warn(
-        "Failed to log certificate:",
-        e?.response?.data || e?.message
-      );
+      
+    } else if (previewType === "summon") {
+      // Generate current date and time
+      const now = new Date();
+      const summonDate = now.toISOString().split("T")[0]; // YYYY-MM-DD
+      const summonTime = now.toLocaleTimeString("en-US", {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: true,
+      }); // HH:MM AM/PM
+      
+      const payload = {
+        recipientName: fullName(previewResident), // Changed from residentId to recipientName
+        reason: "Official Summon",
+        summonDate: summonDate, // Added required field
+        summonTime: summonTime, // Added required field
+        status: "Pending",
+      };
+      
+      console.log("📤 Sending summon:", payload);
+      const response = await api.post("/summons", payload);
+      console.log("✅ Summon response:", response.data);
+      
+      setRecordStatus({
+        show: true,
+        message: "Summon recorded successfully!",
+        type: 'success'
+      });
     }
+  } catch (e: any) {
+    console.error("❌ Error:", e?.response?.data || e?.message);
+    
+    setRecordStatus({
+      show: true,
+      message: e?.response?.data?.error || e?.response?.data?.message || "Failed to record document",
+      type: 'error'
+    });
+  }
+}}
+        documentType={previewType}
+      />
 
-    setShowPreview(false);
-  }}
-/>
-
-
+      <Modal visible={recordStatus.show} animationType="fade" transparent>
+  <View style={styles.modalOverlay}>
+    <View style={styles.smallModalContent}>
+      <Text style={[
+        GLOBAL_STYLES.subtitle, 
+        { color: recordStatus.type === 'success' ? COLORS.secondary : COLORS.danger }
+      ]}>
+        {recordStatus.type === 'success' ? '✅ Success' : '❌ Error'}
+      </Text>
+      <Text style={{ marginTop: 10, marginBottom: 20, fontSize: 15 }}>
+        {recordStatus.message}
+      </Text>
+      <TouchableOpacity 
+        style={[
+          styles.modalButton, 
+          recordStatus.type === 'success' ? styles.saveButton : styles.cancelButton
+        ]} 
+        onPress={() => setRecordStatus({show: false, message: '', type: 'success'})}
+      >
+        <Text style={styles.modalButtonText}>OK</Text>
+      </TouchableOpacity>
+    </View>
+  </View>
+</Modal>
     </SidebarLayout>
   );
 }
 
-/* ------------------------------ Small UI Bits ----------------------------- */
+/* ============================================================================
+   REUSABLE COMPONENTS
+   ========================================================================== */
 
-function Row({ children, style, gap = 8 }) {
-  return <View style={[{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap }, style]}>{children}</View>;
+function ResidentFormModal({ visible, title, form, setForm, onSave, onCancel }) {
+  return (
+    <Modal visible={visible} animationType="fade" transparent onRequestClose={onCancel}>
+      <View style={styles.modalOverlay}>
+        <ScrollView 
+          style={styles.modalScrollView}
+          contentContainerStyle={styles.modalScrollContent}
+          showsVerticalScrollIndicator={true}
+        >
+          <View style={styles.formModalContent}>
+            <Text style={GLOBAL_STYLES.subtitle}>{title}</Text>
+
+            <TwoColumnGrid>
+              <FormInput
+                label="First Name"
+                value={form.firstName}
+                onChangeText={(t) => setForm({ ...form, firstName: t })}
+              />
+              <FormInput
+                label="Middle Name"
+                value={form.middleName}
+                onChangeText={(t) => setForm({ ...form, middleName: t })}
+              />
+              <FormInput
+                label="Last Name"
+                value={form.lastName}
+                onChangeText={(t) => setForm({ ...form, lastName: t })}
+              />
+              
+              <DateInput
+                label="Birth Date"
+                value={form.birthDate}
+                onChange={(value) => setForm({ ...form, birthDate: value })}
+              />
+
+              <DropdownInput
+                label="Gender"
+                value={form.gender}
+                options={GENDER_OPTIONS}
+                onValueChange={(value) => setForm({ ...form, gender: value })}
+              />
+
+              <DropdownInput
+                label="Civil Status"
+                value={form.civilStatus}
+                options={CIVIL_STATUS_OPTIONS}
+                onValueChange={(value) => setForm({ ...form, civilStatus: value })}
+              />
+
+              <FormInput
+                label="Street"
+                value={form.street}
+                onChangeText={(t) => setForm({ ...form, street: t })}
+              />
+              <FormInput
+                label="Purok"
+                value={form.purok}
+                onChangeText={(t) => setForm({ ...form, purok: t })}
+              />
+              <FormInput
+                label="Barangay"
+                value={form.barangay}
+                onChangeText={(t) => setForm({ ...form, barangay: t })}
+              />
+              <FormInput
+                label="Contact Number"
+                value={form.contactNumber}
+                onChangeText={(t) => setForm({ ...form, contactNumber: t })}
+                keyboardType="phone-pad"
+              />
+              <FormInput
+                label="Occupation"
+                value={form.occupation}
+                onChangeText={(t) => setForm({ ...form, occupation: t })}
+              />
+              <FormInput
+                label="Monthly Income"
+                value={form.monthlyIncome}
+                onChangeText={(t) => setForm({ ...form, monthlyIncome: t })}
+                keyboardType="numeric"
+              />
+
+              <DropdownInput
+                label="Beneficiary Status"
+                value={form.beneficiaryStatus}
+                options={BENEFICIARY_STATUS_OPTIONS}
+                onValueChange={(value) => setForm({ ...form, beneficiaryStatus: value })}
+              />
+            </TwoColumnGrid>
+
+            <View style={styles.formModalActions}>
+              <TouchableOpacity 
+                style={[styles.modalButton, styles.saveButton]} 
+                onPress={onSave}
+              >
+                <Text style={styles.modalButtonText}>Save</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[styles.modalButton, styles.cancelButton]} 
+                onPress={onCancel}
+              >
+                <Text style={styles.modalButtonText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </ScrollView>
+      </View>
+    </Modal>
+  );
 }
 
-function TwoCol({ children }) {
+function PurposeModal({ visible, purposeText, setPurposeText, onGenerate, onCancel }) {
   return (
-    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
+    <Modal visible={visible} animationType="fade" transparent onRequestClose={onCancel}>
+      <View style={styles.modalOverlay}>
+        <View style={styles.smallModalContent}>
+          <Text style={GLOBAL_STYLES.subtitle}>Certificate Purpose</Text>
+          <TextInput
+            style={[GLOBAL_STYLES.input, { marginTop: 10, marginBottom: 20 }]}
+            placeholder="e.g. Scholarship Application"
+            value={purposeText}
+            onChangeText={setPurposeText}
+          />
+          <View style={styles.formModalActions}>
+            <TouchableOpacity 
+              style={[styles.modalButton, styles.saveButton]} 
+              onPress={onGenerate}
+            >
+              <Text style={styles.modalButtonText}>Generate</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={[styles.modalButton, styles.cancelButton]} 
+              onPress={onCancel}
+            >
+              <Text style={styles.modalButtonText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function ActionButton({ text, onPress, color = COLORS.primary, small = false }) {
+  return (
+    <TouchableOpacity
+      style={[
+        styles.actionButton,
+        {
+          backgroundColor: color,
+          paddingHorizontal: small ? 14 : 16,
+          paddingVertical: small ? 7 : 10,
+          minWidth: small ? 85 : 100,
+        },
+      ]}
+      onPress={onPress}
+    >
+      <Text style={styles.actionButtonText}>{text}</Text>
+    </TouchableOpacity>
+  );
+}
+
+function TwoColumnGrid({ children }) {
+  return (
+    <View style={styles.twoColumnGrid}>
       {React.Children.map(children, (child) => (
-        <View style={{ flexBasis: "48%", flexGrow: 1, minWidth: "48%" }}>{child}</View>
+        <View style={styles.gridItem}>{child}</View>
       ))}
     </View>
   );
 }
 
-function Input({ label, ...props }) {
+function FormInput({ label, ...props }) {
   return (
-    <View style={{ marginBottom: 10 }}>
+    <View style={styles.inputContainer}>
       <Text style={GLOBAL_STYLES.label}>{label}</Text>
-      <TextInput style={GLOBAL_STYLES.input} {...props} />
+      <TextInput style={[GLOBAL_STYLES.input, styles.formInput]} {...props} />
     </View>
   );
 }
 
-function Button({ text, onPress, variant }: { text: string; onPress: () => void; variant?: "danger" | "green" }) {
-  const bg =
-    variant === "danger" ? COLORS.danger : variant === "green" ? COLORS.secondary : COLORS.primary;
+function DateInput({ label, value, onChange }) {
   return (
-    <TouchableOpacity style={[GLOBAL_STYLES.button, { backgroundColor: bg, paddingHorizontal: 14 }]} onPress={onPress}>
+    <View style={styles.inputContainer}>
+      <Text style={GLOBAL_STYLES.label}>{label}</Text>
+      <input
+        type="date"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        style={styles.dateInput}
+      />
+    </View>
+  );
+}
+
+function DropdownInput({ label, value, options, onValueChange }) {
+  return (
+    <View style={styles.inputContainer}>
+      <Text style={GLOBAL_STYLES.label}>{label}</Text>
+      <View style={styles.dropdownContainer}>
+        <Picker 
+          selectedValue={value} 
+          onValueChange={onValueChange}
+          style={styles.picker}
+        >
+          {options.map((opt) => (
+            <Picker.Item 
+              key={opt} 
+              label={opt} 
+              value={opt}
+              style={styles.pickerItem}
+            />
+          ))}
+        </Picker>
+      </View>
+    </View>
+  );
+}
+
+function Button({ text, onPress, variant = "primary" }) {
+  const colors = {
+    primary: COLORS.primary,
+    danger: COLORS.danger,
+    green: COLORS.secondary,
+  };
+
+  return (
+    <TouchableOpacity
+      style={[GLOBAL_STYLES.button, { backgroundColor: colors[variant], paddingHorizontal: 14 }]}
+      onPress={onPress}
+    >
       <Text style={GLOBAL_STYLES.buttonText}>{text}</Text>
     </TouchableOpacity>
   );
 }
 
-function ProfileRow({ label, value }) {
-  return (
-    <View style={{ paddingVertical: 6, borderBottomWidth: 1, borderColor: COLORS.lightGray }}>
-      <Text style={{ fontSize: 12, opacity: 0.6 }}>{label}</Text>
-      <Text style={{ fontSize: 16, fontWeight: "600" }}>{value}</Text>
-    </View>
-  );
+/* ============================================================================
+   HELPER FUNCTIONS
+   ========================================================================== */
+
+function getSearchPlaceholder(searchType: string) {
+  const placeholders = {
+    name: "Search by name...",
+    purok: "Search by purok...",
+    age: "Search by age...",
+    street: "Search by street...",
+  };
+  return placeholders[searchType] || "Search...";
 }
+
+function buildProfileSections(viewItem) {
+  if (!viewItem) return [];
+
+  return [
+    {
+      heading: "Personal Information",
+      fields: [
+        { label: "Full Name", value: fullName(viewItem) },
+        { label: "Gender", value: viewItem.gender },
+        { label: "Age", value: viewItem.age ?? "—" },
+        {
+          label: "Birth Date",
+          value: viewItem.birthDate ? formatDatePH(viewItem.birthDate) : "—",
+        },
+        { label: "Civil Status", value: viewItem.civilStatus || "—" },
+      ],
+    },
+    {
+      heading: "Address",
+      fields: [
+        { label: "Street", value: viewItem.street || "—" },
+        { label: "Purok", value: viewItem.purok || "—" },
+        { label: "Barangay", value: viewItem.barangay || "—" },
+      ],
+    },
+    {
+      heading: "Contact & Socio-Economic",
+      fields: [
+        { label: "Contact Number", value: viewItem.contactNumber || "—" },
+        { label: "Occupation", value: viewItem.occupation || "—" },
+        {
+          label: "Monthly Income",
+          value: viewItem.monthlyIncome
+            ? `₱${viewItem.monthlyIncome} (${classifyIncome(viewItem.monthlyIncome)})`
+            : "—",
+        },
+        {
+          label: "Beneficiary Status",
+          value: viewItem.beneficiaryStatus || "None",
+        },
+      ],
+    },
+  ];
+}
+
+/* ============================================================================
+   STYLES
+   ========================================================================== */
+
+const styles = {
+  // Page Header
+  pageHeader: {
+    marginBottom: 20,
+    backgroundColor: "#1e293b",
+    padding: 20,
+    borderRadius: 12,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  pageTitle: {
+    fontSize: 28,
+    fontWeight: "700",
+    color: "#ffffff",
+    marginBottom: 4,
+  },
+  pageSubtitle: {
+    fontSize: 15,
+    color: "#94a3b8",
+    fontWeight: "500",
+  },
+  
+  // Layout
+  headerContainer: {
+    marginBottom: 20,
+    backgroundColor: COLORS.white,
+    padding: 20,
+    borderRadius: 12,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingVertical: 60,
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 16,
+    color: COLORS.text,
+    opacity: 0.6,
+  },
+  emptyContainer: {
+    padding: 60,
+    alignItems: "center",
+  },
+  emptyText: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: COLORS.text,
+    opacity: 0.5,
+    marginBottom: 8,
+  },
+  emptySubtext: {
+    fontSize: 14,
+    color: COLORS.text,
+    opacity: 0.4,
+  },
+
+  // Search
+  searchMainRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginBottom: 16,
+  },
+  searchTypeWrapper: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  searchLabel: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: COLORS.text,
+    whiteSpace: "nowrap",
+  },
+  searchTypeDropdown: {
+    backgroundColor: COLORS.white,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 8,
+    overflow: "hidden",
+    minWidth: 120,
+  },
+  compactPicker: {
+    height: 44,
+    color: COLORS.text,
+    fontSize: 14,
+  },
+  searchInput: {
+    flex: 1,
+    marginBottom: 0,
+    height: 44,
+  },
+  importButton: {
+    backgroundColor: COLORS.secondary,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    height: 44,
+    marginTop: 0,
+    minWidth: 120,
+  },
+  addButton: {
+    marginTop: 0,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 3,
+    elevation: 3,
+  },
+  
+  // Dropdown Styling
+  dropdownContainer: {
+    backgroundColor: COLORS.white,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 8,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  picker: {
+    height: 48,
+    width: '100%',
+    color: COLORS.text,
+    fontSize: 16,
+  },
+  pickerItem: {
+    fontSize: 16,
+    color: COLORS.text,
+    padding: 12,
+  },
+  pickerWrapper: {
+    backgroundColor: COLORS.white,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+
+  // Resident Card
+  residentCard: {
+    backgroundColor: COLORS.white,
+    borderRadius: 10,
+    padding: 16,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  cardContent: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 16,
+  },
+  residentInfo: {
+    flex: 1,
+    minWidth: 0,
+  },
+  residentName: {
+    fontWeight: "700",
+    fontSize: 17,
+    marginBottom: 8,
+    color: COLORS.text,
+  },
+  residentDetails: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+    marginBottom: 6,
+  },
+  detailBadge: {
+    backgroundColor: COLORS.background,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  detailText: {
+    fontSize: 12,
+    color: COLORS.text,
+    fontWeight: "500",
+  },
+  incomeInfo: {
+    fontSize: 13,
+    color: COLORS.secondary,
+    fontWeight: "600",
+    marginTop: 4,
+  },
+  cardButtons: {
+    gap: 8,
+    alignItems: "flex-end",
+  },
+  buttonRow: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  actionButton: {
+    borderRadius: 7,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  actionButtonText: {
+    color: COLORS.white,
+    fontSize: 13,
+    fontWeight: "600",
+  },
+
+  // Modal
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.6)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  modalScrollView: {
+    maxHeight: "85%",
+    width: "90%",
+    maxWidth: 700,
+  },
+  modalScrollContent: {
+    flexGrow: 1,
+  },
+  formModalContent: {
+    backgroundColor: COLORS.white,
+    borderRadius: 12,
+    padding: 24,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  smallModalContent: {
+    backgroundColor: COLORS.white,
+    borderRadius: 12,
+    padding: 24,
+    width: "90%",
+    maxWidth: 450,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  formModalActions: {
+    flexDirection: "row",
+    gap: 12,
+    marginTop: 24,
+    justifyContent: "flex-end",
+  },
+  modalButton: {
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+    minWidth: 100,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  saveButton: {
+    backgroundColor: COLORS.primary,
+  },
+  cancelButton: {
+    backgroundColor: COLORS.danger,
+  },
+  modalButtonText: {
+    color: COLORS.white,
+    fontSize: 16,
+    fontWeight: "600",
+  },
+
+  // Form
+  twoColumnGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 12,
+    marginTop: 16,
+  },
+  gridItem: {
+    flexBasis: "48%",
+    flexGrow: 1,
+    minWidth: 280,
+  },
+  inputContainer: {
+    marginBottom: 4,
+  },
+  formInput: {
+    marginBottom: 0,
+  },
+  pickerWrapper: {
+    ...GLOBAL_STYLES.input,
+    padding: 0,
+    justifyContent: "center",
+  },
+  dateInput: {
+    width: "100%",
+    padding: 8,
+    borderRadius: 8,
+    backgroundColor: "white",
+    fontSize: 16,
+    border: "1px solid #d1d5db",
+  },
+};
