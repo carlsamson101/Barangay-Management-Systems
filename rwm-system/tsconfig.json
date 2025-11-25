@@ -1,0 +1,43 @@
+{
+  "compilerOptions": {
+    "target": "esnext",
+    "module": "esnext",
+    "jsx": "react-native",
+    "allowJs": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "moduleResolution": "bundler",
+    "strict": false,
+    "types": [
+      "react",
+      "react-native",
+      "expo-router",
+      "node"
+    ],
+    "noEmit": true,
+
+    // --- ADD THESE TWO LINES ---
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./*"]
+    }
+    // ---------------------------
+
+  },
+  "include": [
+    "app",
+    "components",
+    "lib",
+    "types",
+    "index.ts",
+    "index.tsx",
+    ".expo/types/**/*.ts",
+    "expo-env.d.ts"
+  ],
+  "exclude": [
+    "node_modules"
+  ],
+  "extends": "expo/tsconfig.base"
+}
