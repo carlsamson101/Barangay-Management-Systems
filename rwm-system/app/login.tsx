@@ -16,6 +16,14 @@ export default function LoginScreen() {
   // Animation values
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
+  
+  // Shooting money animations
+  const money1 = useRef(new Animated.ValueXY({ x: -100, y: -100 })).current;
+  const money2 = useRef(new Animated.ValueXY({ x: -100, y: -100 })).current;
+  const money3 = useRef(new Animated.ValueXY({ x: -100, y: -100 })).current;
+  const moneyOpacity1 = useRef(new Animated.Value(0)).current;
+  const moneyOpacity2 = useRef(new Animated.Value(0)).current;
+  const moneyOpacity3 = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     Animated.parallel([
@@ -36,17 +44,14 @@ export default function LoginScreen() {
       const x = e.clientX;
       const y = e.clientY;
       
-      // Get the center of the right building area (bottom right)
       const centerX = window.innerWidth - 200;
       const centerY = window.innerHeight - 250;
       
-      // Calculate angle and distance
       const deltaX = x - centerX;
       const deltaY = y - centerY;
       const angle = Math.atan2(deltaY, deltaX);
       const distance = Math.min(Math.sqrt(deltaX * deltaX + deltaY * deltaY) / 50, 8);
       
-      // Calculate eye position (limited range)
       const eyeX = Math.cos(angle) * distance;
       const eyeY = Math.sin(angle) * distance;
       
@@ -54,6 +59,52 @@ export default function LoginScreen() {
     };
 
     window.addEventListener('mousemove', handleMouseMove);
+
+    // Shooting money animation function
+    const shootMoney = (moneyAnim, opacityAnim, delay) => {
+      const screenWidth = window.innerWidth;
+      const screenHeight = window.innerHeight;
+      
+      const startX = Math.random() * screenWidth;
+      const startY = -50;
+      const endX = startX + (Math.random() - 0.5) * 400;
+      const endY = screenHeight + 50;
+      
+      setTimeout(() => {
+        moneyAnim.setValue({ x: startX, y: startY });
+        opacityAnim.setValue(0);
+        
+        Animated.parallel([
+          Animated.timing(moneyAnim, {
+            toValue: { x: endX, y: endY },
+            duration: 2000 + Math.random() * 1000,
+            useNativeDriver: true,
+          }),
+          Animated.sequence([
+            Animated.timing(opacityAnim, {
+              toValue: 1,
+              duration: 400,
+              useNativeDriver: true,
+            }),
+            Animated.delay(1500),
+            Animated.timing(opacityAnim, {
+              toValue: 0,
+              duration: 500,
+              useNativeDriver: true,
+            }),
+          ]),
+        ]).start(() => {
+          // Loop the animation
+          shootMoney(moneyAnim, opacityAnim, Math.random() * 3000);
+        });
+      }, delay);
+    };
+
+    // Start shooting money animations with random delays
+    shootMoney(money1, moneyOpacity1, 3500);
+    shootMoney(money2, moneyOpacity2, 4000);
+    shootMoney(money3, moneyOpacity3, 3000);
+
     return () => window.removeEventListener('mousemove', handleMouseMove);
   }, []);
 
@@ -84,6 +135,55 @@ export default function LoginScreen() {
       {/* Background gradient effects */}
       <View style={styles.gradientTop} />
       <View style={styles.gradientBottom} />
+      
+      {/* Shooting Money Icons */}
+      <Animated.View
+        style={[
+          styles.shootingMoney,
+          {
+            transform: [
+              { translateX: money1.x },
+              { translateY: money1.y },
+              { rotate: '45deg' }
+            ],
+            opacity: moneyOpacity1,
+          },
+        ]}
+      >
+        <Text style={styles.moneyIcon}>🏡</Text>
+      </Animated.View>
+      
+      <Animated.View
+        style={[
+          styles.shootingMoney,
+          {
+            transform: [
+              { translateX: money2.x },
+              { translateY: money2.y },
+              { rotate: '30deg' }
+            ],
+            opacity: moneyOpacity2,
+          },
+        ]}
+      >
+        <Text style={styles.moneyIcon}>👤</Text>
+      </Animated.View>
+      
+      <Animated.View
+        style={[
+          styles.shootingMoney,
+          {
+            transform: [
+              { translateX: money3.x },
+              { translateY: money3.y },
+              { rotate: '60deg' }
+            ],
+            opacity: moneyOpacity3,
+          },
+        ]}
+      >
+        <Text style={styles.moneyIcon}>👥</Text>
+      </Animated.View>
       
       {/* Centered Login Form */}
       <View style={styles.mainContent}>
@@ -182,51 +282,49 @@ export default function LoginScreen() {
               <View style={styles.column} />
             </View>
             
-            {/* Eyes (positioned between columns) */}
-{/* Eyes - Minion Style */}
-<View style={styles.eyesContainer}>
-  {/* Left Eye - Bigger */}
-  <View style={styles.goggleLeft}>
-    <View style={styles.eyeBig}>
-      <View 
-        style={[
-          styles.pupilBig,
-          {
-            transform: [
-              { translateX: eyePosition.x * 1.2 },
-              { translateY: eyePosition.y * 1.2 }
-            ]
-          }
-        ]}
-      >
-        <View style={styles.pupilInner} />
-      </View>
-    </View>
-  </View>
-  
-  {/* Right Eye - Smaller */}
-  <View style={styles.goggleLeft}>
-    <View style={styles.eyeBig}>
-      <View 
-        style={[
-          styles.pupilBig,
-          {
-            transform: [
-              { translateX: eyePosition.x },
-              { translateY: eyePosition.y }
-            ]
-          }
-        ]}
-      >
-        <View style={styles.pupilInner} />
-      </View>
-    </View>
-  </View>
-</View>
+            {/* Eyes - Minion Style */}
+            <View style={styles.eyesContainer}>
+              {/* Left Eye - Bigger */}
+              <View style={styles.goggleLeft}>
+                <View style={styles.eyeBig}>
+                  <View 
+                    style={[
+                      styles.pupilBig,
+                      {
+                        transform: [
+                          { translateX: eyePosition.x * 1.2 },
+                          { translateY: eyePosition.y * 1.2 }
+                        ]
+                      }
+                    ]}
+                  >
+                    <View style={styles.pupilInner} />
+                  </View>
+                </View>
+              </View>
+              
+              {/* Right Eye - Smaller */}
+              <View style={styles.goggleLeft}>
+                <View style={styles.eyeBig}>
+                  <View 
+                    style={[
+                      styles.pupilBig,
+                      {
+                        transform: [
+                          { translateX: eyePosition.x },
+                          { translateY: eyePosition.y }
+                        ]
+                      }
+                    ]}
+                  >
+                    <View style={styles.pupilInner} />
+                  </View>
+                </View>
+              </View>
+            </View>
 
-{/* Goggle Strap */}
-<View style={styles.goggleStrap} />
-            
+            {/* Goggle Strap */}
+            <View style={styles.goggleStrap} />
             
             {/* Base/Steps */}
             <View style={styles.steps}>
@@ -234,8 +332,6 @@ export default function LoginScreen() {
               <View style={styles.step} />
             </View>
           </View>
-          
-        
         </View>
       </Animated.View>
     </View>
@@ -270,6 +366,17 @@ const styles = StyleSheet.create({
     opacity: 0.08,
   },
   
+  // Shooting Money Styles
+  shootingMoney: {
+    position: "absolute",
+    zIndex: 1,
+    pointerEvents: "none",
+  },
+  moneyIcon: {
+    fontSize: 48,
+    textShadow: "0 0 20px rgba(16, 185, 129, 0.8), 0 0 40px rgba(16, 185, 129, 0.4)",
+  },
+  
   // Main Content Container - Centered
   mainContent: {
     flex: 1,
@@ -280,6 +387,7 @@ const styles = StyleSheet.create({
   // Login Form Wrapper
   loginFormWrapper: {
     width: 440,
+    zIndex: 2,
   },
   loginCard: {
     width: "100%",
@@ -438,84 +546,64 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
   },
   eyesContainer: {
-  position: "absolute",
-  top: 140,
-  flexDirection: "row",
-  gap: 80,
-  zIndex: 10,
-  alignItems: "center",
-},
-
-// Goggles
-goggleLeft: {
-  width: 90,
-  height: 90,
-  borderRadius: 45,
-  backgroundColor: "rgba(100, 116, 139, 0.3)",
-  borderWidth: 4,
-  borderColor: "#64748b",
-  alignItems: "center",
-  justifyContent: "center",
-  shadowColor: "#3b82f6",
-  shadowOffset: { width: 0, height: 5 },
-  shadowOpacity: 0.6,
-  shadowRadius: 12,
-},
-goggleRight: {
-  width: 70,
-  height: 70,
-  borderRadius: 35,
-  backgroundColor: "rgba(100, 116, 139, 0.3)",
-  borderWidth: 4,
-  borderColor: "#64748b",
-  alignItems: "center",
-  justifyContent: "center",
-  shadowColor: "#3b82f6",
-  shadowOffset: { width: 0, height: 5 },
-  shadowOpacity: 0.6,
-  shadowRadius: 12,
-},
-
-// Big Eye (Left)
-eyeBig: {
-  width: 75,
-  height: 75,
-  borderRadius: 37.5,
-  backgroundColor: "#ffffff",
-  alignItems: "center",
-  justifyContent: "center",
-  borderWidth: 2,
-  borderColor: "#1e293b",
-},
-pupilBig: {
-  width: 32,
-  height: 32,
-  borderRadius: 16,
-  backgroundColor: "#8b4513",
-  alignItems: "center",
-  justifyContent: "center",
-  shadowColor: "#000",
-  shadowOffset: { width: 0, height: 2 },
-  shadowOpacity: 0.4,
-  shadowRadius: 5,
-},
-pupilInner: {
-  width: 12,
-  height: 12,
-  borderRadius: 6,
-  backgroundColor: "#000000",
-},
-
-// Goggle Strap
-goggleStrap: {
-  position: "absolute",
-  top: 175,
-  width: 340,
-  height: 8,
-  backgroundColor: "#65790aff",
-  borderRadius: 4,
-  zIndex: 5,
-},
+    position: "absolute",
+    top: 140,
+    flexDirection: "row",
+    gap: 80,
+    zIndex: 10,
+    alignItems: "center",
+  },
+  goggleLeft: {
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    backgroundColor: "rgba(100, 116, 139, 0.3)",
+    borderWidth: 4,
+    borderColor: "#64748b",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#3b82f6",
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.6,
+    shadowRadius: 12,
+  },
+  eyeBig: {
+    width: 75,
+    height: 75,
+    borderRadius: 37.5,
+    backgroundColor: "#ffffff",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 2,
+    borderColor: "#1e293b",
+  },
+  pupilBig: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "#8b4513",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.4,
+    shadowRadius: 5,
+  },
+  pupilInner: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: "#000000",
+  },
+  goggleStrap: {
+    position: "absolute",
+    top: 175,
+    width: 340,
+    height: 8,
+    backgroundColor: "#65790aff",
+    borderRadius: 4,
+    zIndex: 5,
+  },
   steps: {
     alignItems: "center",
     gap: 4,
@@ -527,5 +615,4 @@ goggleStrap: {
     borderWidth: 2,
     borderColor: "rgba(59, 130, 246, 0.3)",
   },
-  
 });

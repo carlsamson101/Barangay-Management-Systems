@@ -1,6 +1,6 @@
 // @ts-nocheck
 import React, { useEffect, useState } from "react";
-import { View, Text, TouchableOpacity, SafeAreaView, StyleSheet, Modal } from "react-native";
+import { View, Text, TouchableOpacity, SafeAreaView, StyleSheet, Modal, Image } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter, usePathname } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -9,14 +9,17 @@ export default function SidebarLayout({ children }) {
   const router = useRouter();
   const pathname = usePathname();
   const [barangayName, setBarangayName] = useState("");
+  const [barangayLogoUrl, setBarangayLogoUrl] = useState(null); // ✅ ADD THIS
   const [showLogoutModal, setShowLogoutModal] = useState(false);
 
   useEffect(() => {
-    const loadBarangay = async () => {
+    const loadBarangayData = async () => {
       const name = await AsyncStorage.getItem("barangayName");
+      const logo = await AsyncStorage.getItem("barangayLogoUrl"); // ✅ LOAD LOGO
       if (name) setBarangayName(name);
+      if (logo) setBarangayLogoUrl(logo);
     };
-    loadBarangay();
+    loadBarangayData();
   }, []);
 
   const isActive = (path) => pathname === path;
@@ -40,7 +43,17 @@ export default function SidebarLayout({ children }) {
           {/* Logo & Title */}
           <View style={styles.sidebarHeader}>
             <View style={styles.logoContainer}>
-              <Text style={styles.logoText}>🏛️</Text>
+              {barangayLogoUrl ? (
+                // ✅ Show uploaded logo if available
+                <Image 
+                  source={{ uri: barangayLogoUrl }} 
+                  style={styles.logoImage}
+                  resizeMode="contain"
+                />
+              ) : (
+                // ✅ Default emoji logo if no logo uploaded
+                <Text style={styles.logoText}>🏛️</Text>
+              )}
             </View>
             <Text style={styles.sidebarTitle}>
               {barangayName || "Barangay Panel"}
@@ -122,6 +135,29 @@ export default function SidebarLayout({ children }) {
                 Summon Logs
               </Text>
             </TouchableOpacity>
+
+                        <TouchableOpacity
+              style={[styles.navButton, isActive("/concerns") && styles.navButtonActive]}
+              onPress={() => router.push("/concerns")}
+            >
+              <Ionicons 
+                name={isActive("/concerns") ? "chatbox" : "chatbox-outline"} 
+                size={22} 
+                color={isActive("/concerns") ? "#3b82f6" : "#94a3b8"} 
+              />
+              <Text
+                style={[
+                  styles.navButtonText,
+                  isActive("/concerns") && styles.navButtonTextActive,
+                ]}
+              >
+                Resident Concerns
+              </Text>
+            </TouchableOpacity>
+
+            {/* Divider before Profile */}
+            <View style={styles.navDivider} />
+
 
             {/* Divider before Profile */}
             <View style={styles.navDivider} />
@@ -232,6 +268,11 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: "rgba(59, 130, 246, 0.3)",
     marginBottom: 15,
+    overflow: "hidden", // ✅ Important for circular image
+  },
+  logoImage: {
+    width: "100%",
+    height: "100%",
   },
   logoText: {
     fontSize: 30,
@@ -277,7 +318,7 @@ const styles = StyleSheet.create({
   },
   navButtonText: {
     fontSize: 15,
-    color: "#ffffffff",
+    color: "#94a3b8",
     fontWeight: "500",
     letterSpacing: 0.3,
   },

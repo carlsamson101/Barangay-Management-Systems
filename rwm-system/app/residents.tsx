@@ -14,7 +14,6 @@ import {
 import { Picker } from "@react-native-picker/picker";
 import * as DocumentPicker from "expo-document-picker";
 import * as Print from "expo-print";
-import * as Sharing from "expo-sharing";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import SidebarLayout from "../components/SidebarLayout";
@@ -32,7 +31,7 @@ import ProfileModal from "../components/ProfileModal";
 const GENDER_OPTIONS = ["Male", "Female", "Other"];
 const CIVIL_STATUS_OPTIONS = ["Single", "Married", "Widowed", "Separated"];
 const BENEFICIARY_STATUS_OPTIONS = ["None", "4Ps", "Senior Citizen", "PWD", "Solo Parent"];
-const SEARCH_TYPES = ["name", "purok", "age", "street"];
+const SEARCH_TYPES = ["name", "purok", "age", "street", "gender"];
 
 const emptyForm = {
   firstName: "",
@@ -88,7 +87,8 @@ export default function ResidentsScreen() {
   // State - Data
   const [residents, setResidents] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
-  
+    const [barangayLogoUrl, setBarangayLogoUrl] = useState<string | null>(null);
+const [barangayCaptain, setBarangayCaptain] = useState<string>(""); // ✅ ADD THIS
   // State - Search
   const [query, setQuery] = useState("");
   const [searchType, setSearchType] = useState("name");
@@ -127,50 +127,54 @@ export default function ResidentsScreen() {
     }
   };
 
-  const searchResidents = async (text: string) => {
-    setQuery(text);
-    
-    if (searchTimeout) {
-      clearTimeout(searchTimeout);
-    }
-    
-    if (!text || text.trim().length === 0) {
-      fetchResidents();
-      return;
-    }
-    
-    const timeout = setTimeout(async () => {
-      try {
-        setLoading(true);
-        const endpoints = {
-          name: `/residents/search/${encodeURIComponent(text)}`,
-          purok: `/residents/search/purok/${encodeURIComponent(text)}`,
-          age: `/residents/search/age/${encodeURIComponent(text)}`,
-          street: `/residents/search/street/${encodeURIComponent(text)}`,
-        };
-        
-        const endpoint = endpoints[searchType] || endpoints.name;
-        console.log("🔍 Searching:", endpoint);
-        
-        const res = await api.get(endpoint);
-        console.log("✅ Search results:", res.data?.length || 0, "residents found");
-        setResidents(res.data || []);
-      } catch (err: any) {
-        console.error("❌ Search error:", err?.response?.data || err?.message);
-        // Don't fallback to all residents on search error - keep empty or show error
-        if (err?.response?.status === 404) {
-          setResidents([]);
-        } else {
-          Alert.alert("Search Error", "Failed to search residents. Please try again.");
-          fetchResidents();
-        }
-      } finally {
-        setLoading(false);
+  // Updated constants - Add gender to search types
+const SEARCH_TYPES = ["name", "purok", "age", "street", "gender"];
+
+// Updated searchResidents function
+const searchResidents = async (text: string) => {
+  setQuery(text);
+  
+  if (searchTimeout) {
+    clearTimeout(searchTimeout);
+  }
+  
+  if (!text || text.trim().length === 0) {
+    fetchResidents();
+    return;
+  }
+  
+  const timeout = setTimeout(async () => {
+    try {
+      setLoading(true);
+      const endpoints = {
+        name: `/residents/search/${encodeURIComponent(text)}`,
+        purok: `/residents/search/purok/${encodeURIComponent(text)}`,
+        age: `/residents/search/age/${encodeURIComponent(text)}`,
+        street: `/residents/search/street/${encodeURIComponent(text)}`,
+        gender: `/residents/search/gender/${encodeURIComponent(text)}`, // ✅ NEW
+      };
+      
+      const endpoint = endpoints[searchType] || endpoints.name;
+      console.log("🔍 Searching:", endpoint);
+      
+      const res = await api.get(endpoint);
+      console.log("✅ Search results:", res.data?.length || 0, "residents found");
+      setResidents(res.data || []);
+    } catch (err: any) {
+      console.error("❌ Search error:", err?.response?.data || err?.message);
+      if (err?.response?.status === 404) {
+        setResidents([]);
+      } else {
+        Alert.alert("Search Error", "Failed to search residents. Please try again.");
+        fetchResidents();
       }
-    }, 500);
-    
-    setSearchTimeout(timeout);
-  };
+    } finally {
+      setLoading(false);
+    }
+  }, 500);
+  
+  setSearchTimeout(timeout);
+};
 
   const [recordStatus, setRecordStatus] = useState<{show: boolean, message: string, type: 'success' | 'error'}>({
   show: false,
@@ -305,35 +309,62 @@ export default function ResidentsScreen() {
     setShowPurpose(true);
   };
 
-  const openCertificatePreview = (item, purpose) => {
-    const html = certificateTemplate(item, purpose, fullName, formatDatePH);
-    setPreviewResident(item);
-    setPreviewType("indigency");
-    setPreviewHTML(html);
-    setShowPreview(true);
-  };
+const openCertificatePreview = (item, purpose) => {
+  const html = certificateTemplate(
+    item,
+    purpose,
+    fullName,
+    formatDatePH,
+    barangayLogoUrl || "",
+    barangayCaptain || "" // ✅ PASS CAPTAIN NAME
+  );
+  setPreviewResident(item);
+  setPreviewType("indigency");
+  setPreviewHTML(html);
+  setShowPreview(true);
+};
 
-  const openSummonPreview = (item) => {
-    const html = summonTemplate(item, fullName, formatDatePH);
-    setPreviewResident(item);
-    setPreviewType("summon");
-    setPreviewHTML(html);
-    setShowPreview(true);
-  };
-
+const openSummonPreview = (item) => {
+  const html = summonTemplate(
+    item,
+    fullName,
+    formatDatePH,
+    barangayLogoUrl || "",
+    barangayCaptain || "" // ✅ ADD THIS - Pass captain name to summon
+  );
+  setPreviewResident(item);
+  setPreviewType("summon");
+  setPreviewHTML(html);
+  setShowPreview(true);
+};
+  
   /* ==========================================================================
      LIFECYCLE
      ======================================================================== */
 
   useEffect(() => {
-    fetchResidents();
-    
-    return () => {
-      if (searchTimeout) {
-        clearTimeout(searchTimeout);
-      }
-    };
-  }, []);
+  fetchResidents();
+
+  // 🔹 Load logo and captain name saved in Profile screen
+  const loadBarangayData = async () => {
+    try {
+      const logo = await AsyncStorage.getItem("barangayLogoUrl");
+      const captain = await AsyncStorage.getItem("barangayCaptain");
+      setBarangayLogoUrl(logo);
+      setBarangayCaptain(captain || ""); // ✅ LOAD CAPTAIN
+    } catch (e) {
+      console.warn("Failed to load barangay data from storage", e);
+    }
+  };
+
+  loadBarangayData();
+  
+  return () => {
+    if (searchTimeout) {
+      clearTimeout(searchTimeout);
+    }
+  };
+}, []);
 
   /* ==========================================================================
      RENDER HELPERS
@@ -523,117 +554,93 @@ export default function ResidentsScreen() {
       />
 
       <CertificatePreview
-        visible={showPreview}
-        html={previewHTML}
-        onClose={() => setShowPreview(false)}
-        onPrint={async () => {
-          if (!previewHTML || !previewResident || !previewType) return;
+  visible={showPreview}
+  html={previewHTML}
+  onClose={() => setShowPreview(false)}
+  onPrint={async () => {
+    if (!previewHTML) return;
 
-          const { uri } = await Print.printToFileAsync({ html: previewHTML });
-          if (await Sharing.isAvailableAsync()) {
-            await Sharing.shareAsync(uri);
-          }
-
-          try {
-            await api.post("/certificates", {
-              residentId: previewResident._id,
-              documentType:
-                previewType === "indigency"
-                  ? "Certificate of Indigency"
-                  : "Letter of Summon",
-              purpose: previewType === "indigency" ? purposeText || "Official request" : "",
-            });
-          } catch (e: any) {
-            console.warn("Failed to log certificate:", e?.response?.data || e?.message);
-          }
-
-          setShowPreview(false);
-        }}
-      />
-
-
-      <CertificatePreview
-        visible={showPreview}
-        html={previewHTML}
-        onClose={() => setShowPreview(false)}
-        onPrint={async () => {
-          if (!previewHTML || !previewResident || !previewType) return;
-
-          const { uri } = await Print.printToFileAsync({ html: previewHTML });
-          if (await Sharing.isAvailableAsync()) {
-            await Sharing.shareAsync(uri);
-          }
-
-          setShowPreview(false);
-        }}
-    onRecord={async () => {
-  if (!previewResident || !previewType) {
-    setRecordStatus({
-      show: true,
-      message: "Missing resident or document type",
-      type: 'error'
-    });
-    return;
-  }
-
-  try {
-    if (previewType === "indigency") {
-      const payload = {
-        residentName: fullName(previewResident),
-        certificateType: "Certificate of Indigency",
-        purpose: purposeText || "Official request",
-      };
-      
-      console.log("📤 Sending certificate:", payload);
-      const response = await api.post("/certificates", payload);
-      console.log("✅ Certificate response:", response.data);
-      
+    try {
+      // 🌐 Web: use browser print dialog
+      await Print.printAsync({ html: previewHTML });
+    } catch (e) {
+      console.error("Print error:", e);
+      if (typeof window !== "undefined") {
+        window.alert("Failed to print document.");
+      }
+    } finally {
+      setShowPreview(false);
+    }
+  }}
+  onRecord={async () => {
+    if (!previewResident || !previewType) {
       setRecordStatus({
         show: true,
-        message: "Certificate recorded successfully!",
-        type: 'success'
+        message: "Missing resident or document type",
+        type: "error",
       });
-      
-    } else if (previewType === "summon") {
-      // Generate current date and time
-      const now = new Date();
-      const summonDate = now.toISOString().split("T")[0]; // YYYY-MM-DD
-      const summonTime = now.toLocaleTimeString("en-US", {
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: true,
-      }); // HH:MM AM/PM
-      
-      const payload = {
-        recipientName: fullName(previewResident), // Changed from residentId to recipientName
-        reason: "Official Summon",
-        summonDate: summonDate, // Added required field
-        summonTime: summonTime, // Added required field
-        status: "Pending",
-      };
-      
-      console.log("📤 Sending summon:", payload);
-      const response = await api.post("/summons", payload);
-      console.log("✅ Summon response:", response.data);
-      
+      return;
+    }
+
+    try {
+      if (previewType === "indigency") {
+        const payload = {
+          residentName: fullName(previewResident),
+          certificateType: "Certificate of Indigency",
+          purpose: purposeText || "Official request",
+        };
+
+        console.log("📤 Sending certificate:", payload);
+        const response = await api.post("/certificates", payload);
+        console.log("✅ Certificate response:", response.data);
+
+        setRecordStatus({
+          show: true,
+          message: "Certificate recorded successfully!",
+          type: "success",
+        });
+      } else if (previewType === "summon") {
+        const now = new Date();
+        const summonDate = now.toISOString().split("T")[0];
+        const summonTime = now.toLocaleTimeString("en-US", {
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: true,
+        });
+
+        const payload = {
+          recipientName: fullName(previewResident),
+          reason: "Official Summon",
+          summonDate,
+          summonTime,
+          status: "Pending",
+        };
+
+        console.log("📤 Sending summon:", payload);
+        const response = await api.post("/summons", payload);
+        console.log("✅ Summon response:", response.data);
+
+        setRecordStatus({
+          show: true,
+          message: "Summon recorded successfully!",
+          type: "success",
+        });
+      }
+    } catch (e: any) {
+      console.error("❌ Error:", e?.response?.data || e?.message);
+
       setRecordStatus({
         show: true,
-        message: "Summon recorded successfully!",
-        type: 'success'
+        message:
+          e?.response?.data?.error ||
+          e?.response?.data?.message ||
+          "Failed to record document",
+        type: "error",
       });
     }
-  } catch (e: any) {
-    console.error("❌ Error:", e?.response?.data || e?.message);
-    
-    setRecordStatus({
-      show: true,
-      message: e?.response?.data?.error || e?.response?.data?.message || "Failed to record document",
-      type: 'error'
-    });
-  }
-}}
-        documentType={previewType}
-      />
+  }}
+  documentType={previewType}
+/>
 
       <Modal visible={recordStatus.show} animationType="fade" transparent>
   <View style={styles.modalOverlay}>
@@ -1252,7 +1259,7 @@ const styles = {
     backgroundColor: COLORS.primary,
   },
   cancelButton: {
-    backgroundColor: COLORS.danger,
+    backgroundColor: "#000",
   },
   modalButtonText: {
     color: COLORS.white,

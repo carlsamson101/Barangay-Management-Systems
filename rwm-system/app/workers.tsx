@@ -78,16 +78,35 @@ export default function WorkersPage() {
      ======================================================================== */
 
   const fetchWorkers = async () => {
-    try {
-      setLoading(true);
-      const res = await api.get("/workers");
-      setWorkers(res.data || []);
-    } catch (err: any) {
-      console.error("❌ /workers error:", err?.response?.data || err?.message);
-    } finally {
-      setLoading(false);
+  try {
+    setLoading(true);
+    console.log("🔄 Fetching workers...");
+    
+    const res = await api.get("/workers");
+    console.log("✅ Workers fetched:", res.data);
+    
+    // Ensure we always set an array
+    setWorkers(Array.isArray(res.data) ? res.data : []);
+  } catch (err: any) {
+    console.error("❌ /workers error:", err?.response?.data || err?.message);
+    
+    // Set empty array on error so UI isn't stuck
+    setWorkers([]);
+    
+    // Optional: Show alert to user
+    if (err?.response?.status === 401) {
+      alert("Session expired. Please log in again.");
+    } else if (err?.response?.status === 500) {
+      alert("Server error. Please try again later.");
+    } else {
+      alert("Failed to load workers. Please check your connection.");
     }
-  };
+  } finally {
+    // CRITICAL: Always set loading to false
+    setLoading(false);
+    console.log("✅ Loading complete");
+  }
+};
 
   const addWorker = async () => {
     try {
@@ -764,7 +783,7 @@ const styles = {
     backgroundColor: COLORS.primary,
   },
   cancelButton: {
-    backgroundColor: "#f3f4f6",
+    backgroundColor: "#000",
     borderWidth: 1,
     borderColor: "#d1d5db",
   },

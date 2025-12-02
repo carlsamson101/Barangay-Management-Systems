@@ -8,18 +8,33 @@ import {
   TouchableOpacity,
   ScrollView,
   Alert,
+  Platform,
   ActivityIndicator,
+  Image,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
-
+import * as ImagePicker from "expo-image-picker";
 import SidebarLayout from "../components/SidebarLayout";
 import { GLOBAL_STYLES, COLORS } from "../lib/globalStyles";
 import api from "../lib/api";
 
+
+
+export const showMessage = (title: string, message: string) => {
+  if (Platform.OS === "web") {
+    // Web: use browser alert
+    window.alert(`${title}\n\n${message}`);
+  } else {
+    // Native: use React Native Alert
+    Alert.alert(title, message);
+  }
+};
+
 export default function ProfileScreen() {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
   const [barangayData, setBarangayData] = useState({
     name: "",
     email: "",
@@ -27,6 +42,7 @@ export default function ProfileScreen() {
     contactNumber: "",
     captain: "",
     secretary: "",
+    logoUrl: "",
   });
 
   const [passwordData, setPasswordData] = useState({
@@ -39,56 +55,175 @@ export default function ProfileScreen() {
     loadBarangayData();
   }, []);
 
-  const loadBarangayData = async () => {
+// In loadBarangayData function
+const loadBarangayData = async () => {
+  try {
+    setLoading(true);
+    const res = await api.get("/auth/profile");
+    setBarangayData({
+      name: res.data.name || "",
+      email: res.data.email || "",
+      address: res.data.address || "",
+      contactNumber: res.data.contactNumber || "",
+      captain: res.data.captain || "",
+      secretary: res.data.secretary || "",
+      logoUrl: res.data.logoUrl || "",
+    });
+
+    await AsyncStorage.setItem("barangayName", res.data.name || "");
+    await AsyncStorage.setItem("barangayCaptain", res.data.captain || ""); // ✅ MAKE SURE THIS IS HERE
+    await AsyncStorage.setItem("barangayLogoUrl", res.data.logoUrl || "");
+    
+    // ✅ ADD THIS DEBUG LOG
+    console.log("📝 Saved captain to storage:", res.data.captain);
+  } catch (err) {
+    console.error("❌ Load profile error:", err);
+  } finally {
+    setLoading(false);
+  }
+};
+
+  const pickLogo = async () => {
     try {
-      setLoading(true);
-      const res = await api.get("/auth/profile");
-      setBarangayData({
-        name: res.data.name || "",
-        email: res.data.email || "",
-        address: res.data.address || "",
-        contactNumber: res.data.contactNumber || "",
-        captain: res.data.captain || "",
-        secretary: res.data.secretary || "",
+      // Request permission
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== "granted") {
+       showMessage("Permission needed", "Please allow access to your photos to upload a logo.");
+        return;
+      }
+
+      // Pick image
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
       });
+
+      if (!result.canceled && result.assets[0]) {
+        await uploadLogo(result.assets[0].uri);
+      }
     } catch (err: any) {
-      console.error("❌ Load profile error:", err?.response?.data || err?.message);
-      Alert.alert("Error", "Failed to load barangay profile.");
-    } finally {
-      setLoading(false);
+      console.error("❌ Pick logo error:", err);
+      showMessage("Error", "Failed to select image.");
     }
   };
 
-  const updateProfile = async () => {
-    try {
-      setSaving(true);
-      await api.put("/auth/profile", barangayData);
-      
-      // Update stored barangay name
-      await AsyncStorage.setItem("barangayName", barangayData.name);
-      
-      Alert.alert("Success", "Barangay profile updated successfully.");
-    } catch (err: any) {
-      console.error("❌ Update profile error:", err?.response?.data || err?.message);
-      Alert.alert("Error", err?.response?.data?.message || "Failed to update profile.");
-    } finally {
-      setSaving(false);
+ const uploadLogo = async (uri: string) => {
+  try {
+    setUploadingLogo(true);
+
+    const formData = new FormData();
+    const filename = uri.split("/").pop() || "logo.jpg";
+
+    if (Platform.OS === "web") {
+      // 🧠 Web: convert the URI to a Blob / File
+      const response = await fetch(uri);
+      const blob = await response.blob();
+
+      (formData as any).append("logo", blob, filename);
+    } else {
+      // 📱 Native: use the RN-style file object
+      const match = /\.(\w+)$/.exec(filename);
+      const type = match ? `image/${match[1]}` : "image/jpeg";
+
+      formData.append("logo", {
+        uri,
+        name: filename,
+        type,
+      } as any);
     }
+
+    // Make sure this matches your backend route & method:
+    const res = await api.put("/auth/profile/logo", formData, {
+      headers: {
+        "Content-Type": "multipart/form-data",
+      },
+    });
+
+    setBarangayData((prev) => ({
+      ...prev,
+      logoUrl: res.data.logoUrl,
+    }));
+
+    await AsyncStorage.setItem("barangayLogoUrl", res.data.logoUrl);
+
+    showMessage("Success", "Logo uploaded successfully!");
+  } catch (err: any) {
+    console.error("❌ Upload logo error:", err?.response?.data || err?.message);
+    showMessage("Error", err?.response?.data?.message || "Failed to upload logo.");
+  } finally {
+    setUploadingLogo(false);
+  }
+};
+
+  const removeLogo = async () => {
+   showMessage(
+      "Remove Logo",
+      "Are you sure you want to remove the barangay logo?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Remove",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              setUploadingLogo(true);
+             await api.delete("/auth/profile/logo");
+            setBarangayData({ ...barangayData, logoUrl: "" });
+            await AsyncStorage.removeItem("barangayLogoUrl");
+
+             showMessage("Success", "Logo removed successfully.");
+            } catch (err: any) {
+              console.error("❌ Remove logo error:", err?.response?.data || err?.message);
+             showMessage("Error", "Failed to remove logo.");
+            } finally {
+              setUploadingLogo(false);
+            }
+          },
+        },
+      ]
+    );
   };
+
+  // In updateProfile function
+const updateProfile = async () => {
+  try {
+    setSaving(true);
+    await api.put("/auth/profile", barangayData);
+    
+    // Update stored data
+    await AsyncStorage.setItem("barangayName", barangayData.name);
+    await AsyncStorage.setItem("barangayCaptain", barangayData.captain); // ✅ MAKE SURE THIS IS HERE
+    await AsyncStorage.setItem("barangayLogoUrl", barangayData.logoUrl);
+    
+    // ✅ ADD THIS DEBUG LOG
+    console.log("📝 Updated captain in storage:", barangayData.captain);
+    
+    showMessage("Success", "Barangay profile updated successfully.");
+  } catch (err: any) {
+    console.error("❌ Update profile error:", err?.response?.data || err?.message);
+    showMessage("Error", err?.response?.data?.message || "Failed to update profile.");
+  } finally {
+    setSaving(false);
+  }
+};
+
+
 
   const changePassword = async () => {
     if (!passwordData.currentPassword || !passwordData.newPassword) {
-      Alert.alert("Error", "Please fill in all password fields.");
+      showMessage("Error", "Please fill in all password fields.");
       return;
     }
 
     if (passwordData.newPassword !== passwordData.confirmPassword) {
-      Alert.alert("Error", "New passwords do not match.");
+      showMessage("Error", "New passwords do not match.");
       return;
     }
 
     if (passwordData.newPassword.length < 6) {
-      Alert.alert("Error", "Password must be at least 6 characters.");
+      showMessage("Error", "Password must be at least 6 characters.");
       return;
     }
 
@@ -99,7 +234,7 @@ export default function ProfileScreen() {
         newPassword: passwordData.newPassword,
       });
 
-      Alert.alert("Success", "Password changed successfully.");
+     showMessage("Success", "Password changed successfully.");
       setPasswordData({
         currentPassword: "",
         newPassword: "",
@@ -107,7 +242,7 @@ export default function ProfileScreen() {
       });
     } catch (err: any) {
       console.error("❌ Change password error:", err?.response?.data || err?.message);
-      Alert.alert("Error", err?.response?.data?.message || "Failed to change password.");
+     showMessage("Error", err?.response?.data?.message || "Failed to change password.");
     } finally {
       setSaving(false);
     }
@@ -134,6 +269,73 @@ export default function ProfileScreen() {
             <Text style={styles.pageTitle}>Manage Profile</Text>
             <Text style={styles.pageSubtitle}>Update your barangay information</Text>
           </View>
+        </View>
+
+        {/* Logo Upload Card */}
+        <View style={styles.card}>
+          <View style={styles.cardHeader}>
+            <Ionicons name="image-outline" size={24} color={COLORS.primary} />
+            <Text style={styles.cardTitle}>Barangay Logo</Text>
+          </View>
+
+          <Text style={styles.logoDescription}>
+            Upload your barangay logo. This will be used in generated certificates and official documents.
+          </Text>
+
+          <View style={styles.logoContainer}>
+            {barangayData.logoUrl ? (
+              <View style={styles.logoPreviewContainer}>
+                <Image
+                  source={{ uri: barangayData.logoUrl }}
+                  style={styles.logoPreview}
+                  resizeMode="contain"
+                />
+                <View style={styles.logoActions}>
+                  <TouchableOpacity
+                    style={[styles.logoActionButton, styles.changeLogoButton]}
+                    onPress={pickLogo}
+                    disabled={uploadingLogo}
+                  >
+                    <Ionicons name="refresh-outline" size={20} color="#ffffff" />
+                    <Text style={styles.logoActionText}>Change</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.logoActionButton, styles.removeLogoButton]}
+                    onPress={removeLogo}
+                    disabled={uploadingLogo}
+                  >
+                    <Ionicons name="trash-outline" size={20} color="#ffffff" />
+                    <Text style={styles.logoActionText}>Remove</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : (
+              <TouchableOpacity
+                style={styles.uploadLogoButton}
+                onPress={pickLogo}
+                disabled={uploadingLogo}
+              >
+                {uploadingLogo ? (
+                  <ActivityIndicator size="large" color={COLORS.primary} />
+                ) : (
+                  <>
+                    <Ionicons name="cloud-upload-outline" size={48} color={COLORS.primary} />
+                    <Text style={styles.uploadLogoText}>Tap to Upload Logo</Text>
+                    <Text style={styles.uploadLogoSubtext}>
+                      Recommended: Square image (1:1 ratio), PNG or JPG
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {uploadingLogo && (
+            <View style={styles.uploadingOverlay}>
+              <ActivityIndicator size="small" color={COLORS.primary} />
+              <Text style={styles.uploadingText}>Uploading...</Text>
+            </View>
+          )}
         </View>
 
         {/* Barangay Information Card */}
@@ -365,6 +567,90 @@ const styles = {
     fontWeight: "700",
     color: COLORS.text,
     marginLeft: 12,
+  },
+  logoDescription: {
+    fontSize: 14,
+    color: COLORS.text,
+    opacity: 0.7,
+    marginBottom: 16,
+    lineHeight: 20,
+  },
+  logoContainer: {
+    alignItems: "center",
+    marginTop: 8,
+  },
+  uploadLogoButton: {
+    width: "100%",
+    height: 220,
+    borderWidth: 2,
+    borderStyle: "dashed",
+    borderColor: COLORS.border,
+    borderRadius: 12,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#f8fafc",
+  },
+  uploadLogoText: {
+    marginTop: 16,
+    fontSize: 16,
+    fontWeight: "600",
+    color: COLORS.text,
+  },
+  uploadLogoSubtext: {
+    marginTop: 6,
+    fontSize: 13,
+    color: COLORS.text,
+    opacity: 0.6,
+    textAlign: "center",
+    paddingHorizontal: 20,
+  },
+  logoPreviewContainer: {
+    width: "100%",
+    alignItems: "center",
+  },
+  logoPreview: {
+    width: 200,
+    height: 200,
+    borderRadius: 12,
+    backgroundColor: "#f8fafc",
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  logoActions: {
+    flexDirection: "row",
+    marginTop: 16,
+    gap: 12,
+  },
+  logoActionButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    gap: 6,
+  },
+  changeLogoButton: {
+    backgroundColor: COLORS.primary,
+  },
+  removeLogoButton: {
+    backgroundColor: COLORS.danger,
+  },
+  logoActionText: {
+    color: "#ffffff",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  uploadingOverlay: {
+    marginTop: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
+  uploadingText: {
+    fontSize: 14,
+    color: COLORS.primary,
+    fontWeight: "500",
   },
   formGroup: {
     marginBottom: 20,

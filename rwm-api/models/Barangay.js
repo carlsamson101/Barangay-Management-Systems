@@ -12,9 +12,12 @@ const BarangaySchema = new mongoose.Schema({
   address: { type: String },
   contactNumber: { type: String },
 
+  // Logo
+  logoUrl: { type: String, default: "" },
+
   // Administrative
-  captain: { type: String }, // Barangay Captain name
-  secretary: { type: String }, // Barangay Secretary name
+  captain: { type: String },
+  secretary: { type: String },
 
   // Location (optional)
   city: { type: String },
@@ -32,7 +35,7 @@ BarangaySchema.pre("save", async function (next) {
   next();
 });
 
-// Update the updatedAt field before saving
+// ⏱ Update updatedAt
 BarangaySchema.pre("save", function (next) {
   this.updatedAt = Date.now();
   next();
